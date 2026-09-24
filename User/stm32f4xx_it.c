@@ -1,6 +1,6 @@
 /**
   ******************************************************************************
-  * @file    FMC_SDRAM/stm32f4xx_it.c 
+  * @file    FMC_SDRAM/stm32f4xx_it.c
   * @author  MCD Application Team
   * @version V1.0.1
   * @date    11-November-2013
@@ -18,8 +18,8 @@
   *
   *        http://www.st.com/software_license_agreement_liberty_v2
   *
-  * Unless required by applicable law or agreed to in writing, software 
-  * distributed under the License is distributed on an "AS IS" BASIS, 
+  * Unless required by applicable law or agreed to in writing, software
+  * distributed under the License is distributed on an "AS IS" BASIS,
   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   * See the License for the specific language governing permissions and
   * limitations under the License.
@@ -37,7 +37,7 @@
 
 /** @addtogroup FMC_SDRAM
   * @{
-  */ 
+  */
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -45,6 +45,13 @@
 /* Private variables ---------------------------------------------------------*/
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
+
+/**
+  * @brief  说明：本文件保留 ST 模板的异常处理框架。
+  *         PendSV_Handler 与 SysTick_Handler 由 gsthread 内核移植层
+  *         （libcpu 中的汇编实现）提供，故此处注释掉，避免符号重复定义；
+  *         USART1 的中断服务程序实现于 usart/bsp_debug_usart.c。
+  */
 
 /******************************************************************************/
 /*            Cortex-M4 Processor Exceptions Handlers                         */
@@ -149,18 +156,18 @@ void SVC_Handler(void)
 //{
 //  uint8_t ucTemp;
 //	if(USART_GetITStatus(DEBUG_USART,USART_IT_RXNE)!=RESET)
-//	{		
+//	{
 //		ucTemp = USART_ReceiveData( DEBUG_USART );
-//    USART_SendData(DEBUG_USART,ucTemp);    
-//	}	 
-//}	
+//    USART_SendData(DEBUG_USART,ucTemp);
+//	}
+//}
 
 /**
   * @}
-  */ 
+  */
 
 /**
   * @}
-  */ 
+  */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

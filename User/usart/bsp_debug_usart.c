@@ -8,13 +8,15 @@
   ******************************************************************************
   * @attention
   *
-  * 实验平台:野火  STM32 F407 开发板  
+  * 实验平台:野火  STM32 F407 开发板
+  * 调试串口：USART1（TX=PA9，RX=PA10，115200 8-N-1），接收走中断
+  * 接收到的字节会写入 gsthread 的 shell 环形缓冲区（gs_ringbuffer）并回显
   * 论坛    :http://www.firebbs.cn
   * 淘宝    :https://fire-stm32.taobao.com
   *
   ******************************************************************************
-  */ 
-  
+  */
+
 #include "./usart/bsp_debug_usart.h"
 #include "E:\Embedded_system\Project_rtos\类rt_thread\gs_thread\gsthread\components\ringbuffer.h"
 #include "gsthread.h"
@@ -23,16 +25,18 @@ extern struct gs_ringbuffer shell_ringbuffer;
 
  /**
   * @brief  配置嵌套向量中断控制器NVIC
+  * @attention 优先级分组为 NVIC_PriorityGroup_2（2 位抢占 + 2 位子优先级），
+  *            抢占优先级 1 需低于内核 PendSV 的优先级，避免影响线程切换
   * @param  无
   * @retval 无
   */
 static void NVIC_Configuration(void)
 {
   NVIC_InitTypeDef NVIC_InitStructure;
-  
+
   /* 嵌套向量中断控制器组选择 */
   NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
-  
+
   /* 配置USART为中断源 */
   NVIC_InitStructure.NVIC_IRQChannel = DEBUG_USART_IRQ;
   /* 抢断优先级为1 */
@@ -55,33 +59,34 @@ void Debug_USART_Config(void)
 {
   GPIO_InitTypeDef GPIO_InitStructure;
   USART_InitTypeDef USART_InitStructure;
-		
-  RCC_AHB1PeriphClockCmd(DEBUG_USART_RX_GPIO_CLK|DEBUG_USART_TX_GPIO_CLK,ENABLE);
+
+  /* 使能 TX/RX 引脚所在 GPIO 端口时钟 */
+  RCC_AHB1PeriphClockCmd(DEBUG_USART_RX_GPIO_CLK | DEBUG_USART_TX_GPIO_CLK, ENABLE);
 
   /* 使能 USART 时钟 */
   RCC_APB2PeriphClockCmd(DEBUG_USART_CLK, ENABLE);
-  
+
   /* GPIO初始化 */
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;  
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-  
+
   /* 配置Tx引脚为复用功能  */
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-  GPIO_InitStructure.GPIO_Pin = DEBUG_USART_TX_PIN  ;  
+  GPIO_InitStructure.GPIO_Pin = DEBUG_USART_TX_PIN;
   GPIO_Init(DEBUG_USART_TX_GPIO_PORT, &GPIO_InitStructure);
 
   /* 配置Rx引脚为复用功能 */
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
   GPIO_InitStructure.GPIO_Pin = DEBUG_USART_RX_PIN;
   GPIO_Init(DEBUG_USART_RX_GPIO_PORT, &GPIO_InitStructure);
-  
- /* 连接 PXx 到 USARTx_Tx*/
-  GPIO_PinAFConfig(DEBUG_USART_RX_GPIO_PORT,DEBUG_USART_RX_SOURCE,DEBUG_USART_RX_AF);
 
-  /*  连接 PXx 到 USARTx__Rx*/
-  GPIO_PinAFConfig(DEBUG_USART_TX_GPIO_PORT,DEBUG_USART_TX_SOURCE,DEBUG_USART_TX_AF);
-  
+  /* 连接 PXx 到 USARTx_Rx */
+  GPIO_PinAFConfig(DEBUG_USART_RX_GPIO_PORT, DEBUG_USART_RX_SOURCE, DEBUG_USART_RX_AF);
+
+  /* 连接 PXx 到 USARTx_Tx */
+  GPIO_PinAFConfig(DEBUG_USART_TX_GPIO_PORT, DEBUG_USART_TX_SOURCE, DEBUG_USART_TX_AF);
+
   /* 配置串DEBUG_USART 模式 */
   /* 波特率设置：DEBUG_USART_BAUDRATE */
   USART_InitStructure.USART_BaudRate = DEBUG_USART_BAUDRATE;
@@ -96,95 +101,125 @@ void Debug_USART_Config(void)
   /* USART模式控制：同时使能接收和发送 */
   USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
   /* 完成USART初始化配置 */
-  USART_Init(DEBUG_USART, &USART_InitStructure); 
-	
+  USART_Init(DEBUG_USART, &USART_InitStructure);
+
   /* 嵌套向量中断控制器NVIC配置 */
   NVIC_Configuration();
-  
-	/* 使能串口接收中断 */
+
+  /* 使能串口接收中断 */
   USART_ITConfig(DEBUG_USART, USART_IT_RXNE, ENABLE);
-	
+
   /* 使能串口 */
   USART_Cmd(DEBUG_USART, ENABLE);
 }
 
-/*****************  发送一个字符 **********************/
-void Usart_SendByte( USART_TypeDef * pUSARTx, uint8_t ch)
+/**
+  * @brief  发送一个字符
+  * @param  pUSARTx: 串口外设指针（如 USART1）
+  * @param  ch: 待发送的字节
+  * @retval 无（阻塞等待发送数据寄存器为空）
+  */
+void Usart_SendByte(USART_TypeDef * pUSARTx, uint8_t ch)
 {
-	/* 发送一个字节数据到USART */
-	USART_SendData(pUSARTx,ch);
-		
-	/* 等待发送数据寄存器为空 */
-	while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TXE) == RESET);	
+  /* 发送一个字节数据到USART */
+  USART_SendData(pUSARTx, ch);
+
+  /* 等待发送数据寄存器为空 */
+  while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TXE) == RESET);
 }
 
-/*****************  发送字符串 **********************/
-void Usart_SendString( USART_TypeDef * pUSARTx, char *str)
+/**
+  * @brief  发送字符串
+  * @param  pUSARTx: 串口外设指针（如 USART1）
+  * @param  str: 待发送的字符串（以 '\0' 结尾）
+  * @retval 无
+  */
+void Usart_SendString(USART_TypeDef * pUSARTx, char *str)
 {
-	unsigned int k=0;
-  do 
+  unsigned int k = 0;
+  do
   {
-      Usart_SendByte( pUSARTx, *(str + k) );
-      k++;
-  } while(*(str + k)!='\0');
-  
+    Usart_SendByte(pUSARTx, *(str + k));
+    k++;
+  } while (*(str + k) != '\0');
+
   /* 等待发送完成 */
-  while(USART_GetFlagStatus(pUSARTx,USART_FLAG_TC)==RESET)
+  while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TC) == RESET)
   {}
 }
 
-/*****************  发送一个16位数 **********************/
-void Usart_SendHalfWord( USART_TypeDef * pUSARTx, uint16_t ch)
+/**
+  * @brief  发送一个16位数（先高八位后低八位）
+  * @param  pUSARTx: 串口外设指针（如 USART1）
+  * @param  ch: 待发送的16位数据
+  * @retval 无
+  */
+void Usart_SendHalfWord(USART_TypeDef * pUSARTx, uint16_t ch)
 {
-	uint8_t temp_h, temp_l;
-	
-	/* 取出高八位 */
-	temp_h = (ch&0XFF00)>>8;
-	/* 取出低八位 */
-	temp_l = ch&0XFF;
-	
-	/* 发送高八位 */
-	USART_SendData(pUSARTx,temp_h);	
-	while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TXE) == RESET);
-	
-	/* 发送低八位 */
-	USART_SendData(pUSARTx,temp_l);	
-	while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TXE) == RESET);	
+  uint8_t temp_h, temp_l;
+
+  /* 取出高八位 */
+  temp_h = (ch & 0XFF00) >> 8;
+  /* 取出低八位 */
+  temp_l = ch & 0XFF;
+
+  /* 发送高八位 */
+  USART_SendData(pUSARTx, temp_h);
+  while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TXE) == RESET);
+
+  /* 发送低八位 */
+  USART_SendData(pUSARTx, temp_l);
+  while (USART_GetFlagStatus(pUSARTx, USART_FLAG_TXE) == RESET);
 }
 
-///重定向c库函数printf到串口，重定向后可使用printf函数
+/**
+  * @brief  重定向c库函数printf到串口，重定向后可使用printf函数
+  * @param  ch: 待输出的字符
+  * @retval 发送成功的字符
+  */
 int fputc(int ch, FILE *f)
 {
-		/* 发送一个字节数据到串口 */
-		USART_SendData(DEBUG_USART, (uint8_t) ch);
-		
-		/* 等待发送完毕 */
-		while (USART_GetFlagStatus(DEBUG_USART, USART_FLAG_TXE) == RESET);		
-	
-		return (ch);
+  /* 发送一个字节数据到串口 */
+  USART_SendData(DEBUG_USART, (uint8_t) ch);
+
+  /* 等待发送完毕 */
+  while (USART_GetFlagStatus(DEBUG_USART, USART_FLAG_TXE) == RESET);
+
+  return (ch);
 }
 
-///重定向c库函数scanf到串口，重写向后可使用scanf、getchar等函数
+/**
+  * @brief  重定向c库函数scanf到串口，重写向后可使用scanf、getchar等函数
+  * @param  无
+  * @retval 从串口读到的字符
+  */
 int fgetc(FILE *f)
 {
-		/* 等待串口输入数据 */
-		while (USART_GetFlagStatus(DEBUG_USART, USART_FLAG_RXNE) == RESET);
+  /* 等待串口输入数据 */
+  while (USART_GetFlagStatus(DEBUG_USART, USART_FLAG_RXNE) == RESET);
 
-		return (int)USART_ReceiveData(DEBUG_USART);
+  return (int)USART_ReceiveData(DEBUG_USART);
 }
 
-void USART1_IRQHandler(void)                	//串口1中断服务程序
+/**
+  * @brief  串口1中断服务程序：读取接收字节，写入 shell 环形缓冲区并回显
+  * @attention 由 NVIC_Configuration 配置的抢占优先级 1 触发；
+  *            实际工程入口以启动文件中的 USART1_IRQHandler 符号为准
+  * @param  无
+  * @retval 无
+  */
+void USART1_IRQHandler(void)                 //串口1中断服务程序
 {
-	uint8_t Res;
+  uint8_t Res;
 
-	if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)  
-	{
-			Res =USART_ReceiveData(USART1);	//读取接收到的数据
-			gs_ringbuffer_putchar(&shell_ringbuffer,Res);
-            USART_SendData(USART1,Res);
-	}
-		
-} 
+  if (USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
+  {
+    Res = USART_ReceiveData(USART1);  //读取接收到的数据
+    gs_ringbuffer_putchar(&shell_ringbuffer, Res);
+    USART_SendData(USART1, Res);
+  }
+
+}
 
 
 

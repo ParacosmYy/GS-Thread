@@ -1,5 +1,12 @@
+/**
+  ******************************************************************************
+  * @file    bsp_debug_usart.h
+  * @brief   调试串口 BSP 头文件：USART1（TX=PA9，RX=PA10，115200 8-N-1）
+  ******************************************************************************
+  */
+
 #ifndef __DEBUG_USART_H
-#define	__DEBUG_USART_H
+#define __DEBUG_USART_H
 
 #include "stm32f4xx.h"
 #include <stdio.h>
@@ -24,13 +31,13 @@
 #define DEBUG_USART_TX_SOURCE                   GPIO_PinSource9
 
 #define DEBUG_USART_IRQHandler                  USART1_IRQHandler
-#define DEBUG_USART_IRQ                 				USART1_IRQn
+#define DEBUG_USART_IRQ                         USART1_IRQn
 /************************************************************/
 
 void Debug_USART_Config(void);
-void Usart_SendByte( USART_TypeDef * pUSARTx, uint8_t ch);
-void Usart_SendString( USART_TypeDef * pUSARTx, char *str);
+void Usart_SendByte(USART_TypeDef * pUSARTx, uint8_t ch);
+void Usart_SendString(USART_TypeDef * pUSARTx, char *str);
 
-void Usart_SendHalfWord( USART_TypeDef * pUSARTx, uint16_t ch);
+void Usart_SendHalfWord(USART_TypeDef * pUSARTx, uint16_t ch);
 
 #endif /* __USART1_H */
